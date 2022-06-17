@@ -1,0 +1,113 @@
+version: '2.2'
+
+# https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html
+# sysctl -w vm.max_map_count=262144
+services:
+  es01:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.4
+    container_name: es01
+    environment:
+      - node.name=es01
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es02,es03
+      - cluster.initial_master_nodes=es01,es02,es03
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - data01:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+
+  es02:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.4
+    container_name: es02
+    environment:
+      - node.name=es02
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es01,es03
+      - cluster.initial_master_nodes=es01,es02,es03
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - data02:/usr/share/elasticsearch/data
+
+  es03:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.4
+    container_name: es03
+    environment:
+      - node.name=es03
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es01,es02
+      - cluster.initial_master_nodes=es01,es02,es03
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - data03:/usr/share/elasticsearch/data
+
+  kib01:
+    image: docker.elastic.co/kibana/kibana:7.17.4
+    container_name: kib01
+    ports:
+      - 5601:5601
+    environment:
+      ELASTICSEARCH_URL: http://es01:9200
+      ELASTICSEARCH_HOSTS: '["http://es01:9200","http://es02:9200","http://es03:9200"]'
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.4
+    restart: unless-stopped
+    volumes:
+      - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logstash/nginx:/etc/logstash/patterns/nginx:ro
+    environment:
+      - "ELASTICSEARCH_HOST_PORT=http://es01:9200"
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.17.4
+    restart: always
+    # -e flag to log to stderr and disable syslog/file output
+    command: -e --strict.perms=false
+    user: root
+    environment:
+      - "KIBANA_HOST_PORT=http://kib01:5601"
+      - "ELASTICSEARCH_HOST_PORT=http://es01:9200"
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - ./filebeat-data/.:/var/lib/filebeat/data/:rw
+
+  web:
+    image: nginx
+    volumes:
+      - ./filebeat-data/.:/var/log/nginx/:rw
+    ports:
+      - "8086:80"
+    environment:
+      - NGINX_PORT=80
+
+# Helper Tools
+  cerebro:
+    image: lmenezes/cerebro
+    ports:
+      - 9000:9000
+
+volumes:
+  data01:
+    driver: local
+  data02:
+    driver: local
+  data03:
+    driver: local

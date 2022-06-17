@@ -1,0 +1,19 @@
+
+filebeat.inputs:
+  - type: log
+    paths:
+      - '/var/lib/filebeat/data/*.log'
+      - '/var/lib/filebeat/data/*.json'
+
+# Output to Logstash
+output.logstash:
+  hosts: ["logstash:5044"]
+
+processors:
+  - decode_json_fields:
+      fields: [ "message" ]
+      target: ""
+      overwrite_keys: true
+
+logging.json: true
+logging.metrics.enabled: false
